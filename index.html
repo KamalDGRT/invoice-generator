@@ -152,6 +152,20 @@
     padding:2px;
   }
   td:nth-child(2) input{text-align:left;}
+  .f-name{
+    width:100%;
+    border:none;
+    background:transparent;
+    text-align:left;
+    font-size:13px;
+    font-family:inherit;
+    padding:2px;
+    resize:none;
+    overflow:hidden;
+    white-space:pre-wrap;
+    word-break:break-word;
+    field-sizing:content;
+  }
   .amt-line{font-size:11px;color:var(--muted);}
   .chk-cell{text-align:center;}
   .row-chk{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
@@ -214,6 +228,7 @@
     .no-print{display:none !important;}
     .rm-row{display:none;}
     td input, .party input, .party textarea, .meta input{border:none !important;}
+    .row-chk input[type="checkbox"]{display:none;}
   }
 </style>
 </head>
@@ -312,7 +327,7 @@ function makeRow(name = '', qty = 1, rate = 0) {
   const tr = document.createElement('tr');
   tr.innerHTML = `
     <td class="sr"></td>
-    <td><input class="f-name" value="${name}" placeholder="Item name"></td>
+    <td><textarea class="f-name" rows="1" placeholder="Item name">${name}</textarea></td>
     <td><input class="f-qty" type="number" min="0" step="1" value="${qty}"></td>
     <td><input class="f-rate" type="number" min="0" step="0.01" value="${rate}"></td>
     <td class="chk-cell"><label class="row-chk"><input type="checkbox" class="f-gst-on" checked><span class="amt-line f-gst-amt">0.00</span></label></td>
@@ -396,22 +411,76 @@ function recalc() {
   document.getElementById('amountWords').textContent = amountInWords(grand);
 }
 
-rowsBody.addEventListener('input', recalc);
-rowsBody.addEventListener('change', recalc);
-currencySelect.addEventListener('change', recalc);
-document.getElementById('addRow').addEventListener('click', () => addRow());
+const STORAGE_KEY = 'invoiceGeneratorState';
+
+function saveState() {
+  const state = {
+    invNo: document.getElementById('invNo').value,
+    invDate: document.getElementById('invDate').value,
+    billerName: document.getElementById('billerName').value,
+    billerEmail: document.getElementById('billerEmail').value,
+    recipientName: document.getElementById('recipientName').value,
+    recipientEmail: document.getElementById('recipientEmail').value,
+    currency: currencySelect.value,
+    rows: [...rowsBody.children].map(tr => ({
+      name: tr.querySelector('.f-name').value,
+      qty: tr.querySelector('.f-qty').value,
+      rate: tr.querySelector('.f-rate').value,
+      gstOn: tr.querySelector('.f-gst-on').checked,
+      forexOn: tr.querySelector('.f-forex-on').checked,
+    })),
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return false;
+  let state;
+  try { state = JSON.parse(raw); } catch { return false; }
+
+  document.getElementById('invNo').value = state.invNo ?? 'INV-0001';
+  document.getElementById('invDate').value = state.invDate ?? '';
+  document.getElementById('billerName').value = state.billerName ?? '';
+  document.getElementById('billerEmail').value = state.billerEmail ?? '';
+  document.getElementById('recipientName').value = state.recipientName ?? '';
+  document.getElementById('recipientEmail').value = state.recipientEmail ?? '';
+  currencySelect.value = state.currency ?? 'INR';
+
+  rowsBody.innerHTML = '';
+  (state.rows?.length ? state.rows : [{ name: '', qty: 1, rate: 0, gstOn: true, forexOn: false }])
+    .forEach(r => {
+      const tr = makeRow(r.name, r.qty, r.rate);
+      tr.querySelector('.f-gst-on').checked = r.gstOn;
+      tr.querySelector('.f-forex-on').checked = r.forexOn;
+      rowsBody.appendChild(tr);
+    });
+  return true;
+}
+
+rowsBody.addEventListener('input', () => { recalc(); saveState(); });
+rowsBody.addEventListener('change', () => { recalc(); saveState(); });
+currencySelect.addEventListener('change', () => { recalc(); saveState(); });
+document.getElementById('addRow').addEventListener('click', () => { addRow(); saveState(); });
 document.getElementById('printBtn').addEventListener('click', () => window.print());
+document.querySelectorAll('.party input, .meta input').forEach(el => el.addEventListener('input', saveState));
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (confirm('Reset all fields?')) {
+    localStorage.removeItem(STORAGE_KEY);
     rowsBody.innerHTML = '';
     addRow('', 1, 0);
     document.querySelectorAll('.party input, .party textarea, .meta input').forEach(el => el.value = '');
     document.getElementById('invNo').value = 'INV-0001';
+    document.getElementById('invDate').valueAsDate = new Date();
+    recalc();
   }
 });
 
-document.getElementById('invDate').valueAsDate = new Date();
-addRow('', 1, 0);
+if (!loadState()) {
+  document.getElementById('invDate').valueAsDate = new Date();
+  addRow('', 1, 0);
+}
+recalc();
 </script>
 </body>
 </html>
