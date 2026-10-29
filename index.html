@@ -119,6 +119,7 @@
     font-size:13px;
   }
   .toggles label{display:flex;align-items:center;gap:6px;cursor:pointer;}
+  body.hide-gst .col-gst, body.hide-forex .col-forex{display:none;}
   table{
     width:100%;
     border-collapse:collapse;
@@ -266,6 +267,8 @@
         <option value="CAD">CAD ($)</option>
       </select>
     </label>
+    <label><input type="checkbox" id="showGst" checked> Show GST</label>
+    <label><input type="checkbox" id="showForex" checked> Show Forex</label>
   </div>
 
   <table>
@@ -275,8 +278,8 @@
         <th>Product / Service</th>
         <th>Qty</th>
         <th>Rate</th>
-        <th>GST (18%)</th>
-        <th>Forex (3.5%)</th>
+        <th class="col-gst">GST (18%)</th>
+        <th class="col-forex">Forex (3.5%)</th>
         <th>Total</th>
         <th class="no-print"></th>
       </tr>
@@ -288,8 +291,8 @@
   <div class="totals">
     <table>
       <tr><td>Subtotal</td><td id="sumSubtotal">0.00</td></tr>
-      <tr><td>GST</td><td id="sumGst">0.00</td></tr>
-      <tr><td>Forex Charge</td><td id="sumForex">0.00</td></tr>
+      <tr class="col-gst"><td>GST</td><td id="sumGst">0.00</td></tr>
+      <tr class="col-forex"><td>Forex Charge</td><td id="sumForex">0.00</td></tr>
       <tr class="grand"><td>Grand Total</td><td id="sumGrand">0.00</td></tr>
     </table>
   </div>
@@ -322,6 +325,14 @@ const CURRENCIES = {
 
 const rowsBody = document.getElementById('rows');
 const currencySelect = document.getElementById('currency');
+const showGst = document.getElementById('showGst');
+const showForex = document.getElementById('showForex');
+
+// Hidden column = charge not applied, so totals stay consistent with what is printed.
+function applyColumnVisibility() {
+  document.body.classList.toggle('hide-gst', !showGst.checked);
+  document.body.classList.toggle('hide-forex', !showForex.checked);
+}
 
 function makeRow(name = '', qty = 1, rate = 0) {
   const tr = document.createElement('tr');
@@ -330,8 +341,8 @@ function makeRow(name = '', qty = 1, rate = 0) {
     <td><textarea class="f-name" rows="1" placeholder="Item name">${name}</textarea></td>
     <td><input class="f-qty" type="number" min="0" step="1" value="${qty}"></td>
     <td><input class="f-rate" type="number" min="0" step="0.01" value="${rate}"></td>
-    <td class="chk-cell"><label class="row-chk"><input type="checkbox" class="f-gst-on" checked><span class="amt-line f-gst-amt">0.00</span></label></td>
-    <td class="chk-cell"><label class="row-chk"><input type="checkbox" class="f-forex-on"><span class="amt-line f-forex-amt">0.00</span></label></td>
+    <td class="chk-cell col-gst"><label class="row-chk"><input type="checkbox" class="f-gst-on" checked><span class="amt-line f-gst-amt">0.00</span></label></td>
+    <td class="chk-cell col-forex"><label class="row-chk"><input type="checkbox" class="f-forex-on"><span class="amt-line f-forex-amt">0.00</span></label></td>
     <td class="f-total">0.00</td>
     <td class="no-print"><button class="rm-row" title="Remove">&times;</button></td>
   `;
@@ -387,8 +398,8 @@ function recalc() {
     tr.querySelector('.sr').textContent = i + 1;
     const qty = parseFloat(tr.querySelector('.f-qty').value) || 0;
     const rate = parseFloat(tr.querySelector('.f-rate').value) || 0;
-    const gstOn = tr.querySelector('.f-gst-on').checked;
-    const forexOn = tr.querySelector('.f-forex-on').checked;
+    const gstOn = showGst.checked && tr.querySelector('.f-gst-on').checked;
+    const forexOn = showForex.checked && tr.querySelector('.f-forex-on').checked;
     const amount = qty * rate;
     const gstAmt = gstOn ? amount * GST_RATE : 0;
     const forexAmt = forexOn ? amount * FOREX_RATE : 0;
@@ -422,6 +433,8 @@ function saveState() {
     recipientName: document.getElementById('recipientName').value,
     recipientEmail: document.getElementById('recipientEmail').value,
     currency: currencySelect.value,
+    showGst: showGst.checked,
+    showForex: showForex.checked,
     rows: [...rowsBody.children].map(tr => ({
       name: tr.querySelector('.f-name').value,
       qty: tr.querySelector('.f-qty').value,
@@ -446,6 +459,8 @@ function loadState() {
   document.getElementById('recipientName').value = state.recipientName ?? '';
   document.getElementById('recipientEmail').value = state.recipientEmail ?? '';
   currencySelect.value = state.currency ?? 'INR';
+  showGst.checked = state.showGst ?? true;
+  showForex.checked = state.showForex ?? true;
 
   rowsBody.innerHTML = '';
   (state.rows?.length ? state.rows : [{ name: '', qty: 1, rate: 0, gstOn: true, forexOn: false }])
@@ -461,12 +476,15 @@ function loadState() {
 rowsBody.addEventListener('input', () => { recalc(); saveState(); });
 rowsBody.addEventListener('change', () => { recalc(); saveState(); });
 currencySelect.addEventListener('change', () => { recalc(); saveState(); });
+[showGst, showForex].forEach(el => el.addEventListener('change', () => { applyColumnVisibility(); recalc(); saveState(); }));
 document.getElementById('addRow').addEventListener('click', () => { addRow(); saveState(); });
 document.getElementById('printBtn').addEventListener('click', () => window.print());
 document.querySelectorAll('.party input, .meta input').forEach(el => el.addEventListener('input', saveState));
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (confirm('Reset all fields?')) {
     localStorage.removeItem(STORAGE_KEY);
+    showGst.checked = showForex.checked = true;
+    applyColumnVisibility();
     rowsBody.innerHTML = '';
     addRow('', 1, 0);
     document.querySelectorAll('.party input, .party textarea, .meta input').forEach(el => el.value = '');
@@ -480,6 +498,7 @@ if (!loadState()) {
   document.getElementById('invDate').valueAsDate = new Date();
   addRow('', 1, 0);
 }
+applyColumnVisibility();
 recalc();
 </script>
 </body>
